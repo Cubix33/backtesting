@@ -1,54 +1,80 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
-st.set_page_config(layout="wide")
-st.title("📈 SMA Crossover Backtester")
+# ----- Sidebar Inputs -----
+st.sidebar.title("📊 Strategy Parameters")
+symbol = st.sidebar.text_input("Stock Symbol (e.g. TATAMOTORS.NS)", "TATAMOTORS.NS")
+start_date = st.sidebar.date_input("Start Date", datetime(2020, 1, 1))
+end_date = st.sidebar.date_input("End Date", datetime(2024, 1, 1))
+sma_short = st.sidebar.slider("Short-term SMA", 3, 20, 5)
+sma_long = st.sidebar.slider("Long-term SMA", 10, 50, 15)
 
-# User inputs
-symbol = st.text_input("Enter Ticker", value="TATAMOTORS.NS")
-start = st.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
-end = st.date_input("End Date", value=pd.to_datetime("2024-01-01"))
+# ----- Title -----
+st.title("💹 SMA Crossover Backtest Dashboard")
+st.caption("Built with ❤️ using Streamlit")
 
-fast = st.number_input("Fast SMA window", min_value=2, value=5)
-slow = st.number_input("Slow SMA window", min_value=fast+1, value=15)
+# ----- Data Download -----
+@st.cache_data
+def load_data(symbol, start, end):
+    df = yf.download(symbol, start=start, end=end)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df[['Close']]
 
-if st.button("Run Backtest"):
-    try:
-        df = yf.download(symbol, start=start, end=end)[['Adj Close']].rename(columns={"Adj Close": "Close"})
-        if df.empty:
-            st.error("No data returned. Check the ticker or date range.")
-        else:
-            # Compute indicators
-            df[f'SMA_{fast}'] = df['Close'].rolling(window=fast).mean()
-            df[f'SMA_{slow}'] = df['Close'].rolling(window=slow).mean()
-            df['Signal'] = (df[f'SMA_{fast}'] > df[f'SMA_{slow}']).astype(int)
-            df['Position'] = df['Signal'].diff()
-            df.dropna(inplace=True)
+df = load_data(symbol, start_date, end_date)
 
-            st.success(f"Data & signals calculated for {symbol}")
+if df.empty:
+    st.error("No data found. Try a different symbol or date range.")
+    st.stop()
 
-            # Show chart
-            st.line_chart(df[['Close', f'SMA_{fast}', f'SMA_{slow}']])
+# ----- SMA Strategy -----
+df['SMA_Short'] = df['Close'].rolling(window=sma_short).mean()
+df['SMA_Long'] = df['Close'].rolling(window=sma_long).mean()
+df['Signal'] = np.where(df['SMA_Short'] > df['SMA_Long'], 1, 0)
+df['Position'] = df['Signal'].diff()
 
-            # Show buy/sell markers in matplotlib
-            st.subheader("Buy/Sell Signals")
-            fig, ax = plt.subplots(figsize=(14, 6))
-            ax.plot(df['Close'], label='Close Price', alpha=0.5)
-            ax.plot(df[f'SMA_{fast}'], label=f'{fast}-day SMA', linestyle='--')
-            ax.plot(df[f'SMA_{slow}'], label=f'{slow}-day SMA', linestyle='--')
+# Drop NaNs
+df.dropna(inplace=True)
+df.reset_index(inplace=True)
 
-            ax.scatter(df[df['Position'] == 1].index, df['Close'][df['Position'] == 1],
-                       marker='^', color='green', label='Buy Signal', s=100)
-            ax.scatter(df[df['Position'] == -1].index, df['Close'][df['Position'] == -1],
-                       marker='v', color='red', label='Sell Signal', s=100)
+# ----- Metrics -----
+buy_signals = df[df['Position'] == 1]
+sell_signals = df[df['Position'] == -1]
+returns = df['Close'].pct_change().fillna(0)
+strategy_returns = df['Signal'].shift(1) * returns
+cumulative_return = (strategy_returns + 1).cumprod().iloc[-1] - 1
 
-            ax.set_title(f"SMA Crossover Strategy – {symbol}")
-            ax.legend()
-            ax.grid(True)
-            st.pyplot(fig)
+col1, col2, col3 = st.columns(3)
+col1.metric("📈 Buy Signals", f"{len(buy_signals)}")
+col2.metric("📉 Sell Signals", f"{len(sell_signals)}")
+col3.metric("💰 Total Return", f"{cumulative_return*100:.2f}%")
 
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
+# ----- Plot -----
+fig, ax = plt.subplots(figsize=(16, 8))
+ax.plot(df['Date'], df['Close'], label='Close Price', alpha=0.5)
+ax.plot(df['Date'], df['SMA_Short'], label=f'{sma_short}-day SMA', linestyle='--')
+ax.plot(df['Date'], df['SMA_Long'], label=f'{sma_long}-day SMA', linestyle='--')
 
+# Buy/Sell Markers
+ax.scatter(buy_signals['Date'], buy_signals['Close'], label='Buy', marker='^', color='green', s=100)
+ax.scatter(sell_signals['Date'], sell_signals['Close'], label='Sell', marker='v', color='red', s=100)
+
+ax.set_title(f"SMA Crossover Strategy for {symbol}", fontsize=18)
+ax.set_xlabel("Date")
+ax.set_ylabel("Price")
+ax.legend()
+ax.grid(True)
+
+st.pyplot(fig)
+
+# ----- Trade Log -----
+st.subheader("📜 Trade Log")
+trade_log = pd.concat([buy_signals[['Date', 'Close']], sell_signals[['Date', 'Close']]])
+trade_log['Action'] = ['Buy'] * len(buy_signals) + ['Sell'] * len(sell_signals)
+trade_log.sort_values('Date', inplace=True)
+trade_log.reset_index(drop=True, inplace=True)
+st.dataframe(trade_log, use_container_width=True)
