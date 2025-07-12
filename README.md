@@ -1,4 +1,4 @@
-# Simple Moving Average (SMA) Crossover Backtesting in Python
+# TradeSight- Simple Moving Average (SMA) Crossover Backtesting in Python
 This project implements a straightforward backtesting framework for a simple moving average (SMA) crossover trading strategy using Python and Pandas.
 
 Deployed with StreamLit- https://backtesting-ezi3yt44q5da2siz2eu4c6.streamlit.app/
