@@ -14,8 +14,8 @@ sma_short = st.sidebar.slider("Short-term SMA", 3, 20, 5)
 sma_long = st.sidebar.slider("Long-term SMA", 10, 50, 15)
 
 # ----- Title -----
-st.title("💹 SMA Crossover Backtest Dashboard")
-st.caption("Built with ❤️ using Streamlit")
+st.title("TradeSight - An SMA Crossover Backtest Dashboard")
+st.caption("Built with Streamlit")
 
 # ----- Data Download -----
 @st.cache_data
